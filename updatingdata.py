@@ -43,8 +43,8 @@ class Cred:
 class dirs:
     repo = "scambi.org"
     url_r = "scambifestival/scambi.org"
-    dbranch = "scripts"
-    cbranch = "scripts"
+    dbranch = "master"
+    cbranch = "master"
     data_folder = "data/{}"  # ready to be formatted
     config_folder = ".pino/{}"  # ready to be formatted
     config_raw_url = "https://raw.githubusercontent.com/scambifestival/scambi.org/main/.pino/{}"
