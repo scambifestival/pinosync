@@ -1,5 +1,6 @@
 import copy
 import json
+import logging
 import os.path
 import datetime
 from dataclasses import dataclass
@@ -40,24 +41,25 @@ class Cred:
     ats: atrt
 
 
-class dirs:
+class Dir:
     repo = "scambi.org"
-    url_r = "scambifestival/scambi.org"
+    url_r = "scambifestival/" + repo
     dbranch = "main"
     cbranch = "main"
     data_folder = "data/{}"  # ready to be formatted
     config_folder = ".pino/{}"  # ready to be formatted
-    config_raw_url = "https://raw.githubusercontent.com/scambifestival/scambi.org/main/.pino/{}"
+    config_raw_url = "https://raw.githubusercontent.com/scambifestival/" + repo + "/" + cbranch + "/" + config_folder
 
 
 checking_outcome = True
+first_run = True
 cred = Cred
 arrow = colored(">>> ", "light_cyan", attrs=["bold"])
 igreen = colored("ⓘ  ", "green", attrs=["bold"])
 ired = colored("ⓘ  ", "red", attrs=["bold"])
 iyallow = colored("ⓘ  ", "yellow", attrs=["bold"])
 icyan = colored("ⓘ  ", "cyan", attrs=["bold"])
-dirs = dirs
+dirs = Dir
 
 
 # noinspection SpellCheckingInspection
@@ -66,11 +68,14 @@ def main():
     sleep(1)
     cprint("\nPLEASE CHECK THE README FILE IN THE GITHUB REPO BEFORE USING THIS TOOL.\n", "red")
     sleep(1)
-    print(icyan + "'updatingdata.py' working dirs:")
+    print(icyan + "'updatingdata.py' working dirs:\n")
     sleep(0.4)
-    print("\tRepository:\t" + dirs.repo)
+    print("\tRepository:\t\t" + dirs.repo)
     sleep(0.4)
-    print("\tBranch:\t\t" + dirs.dbranch + "\n")
+    print("\tData Branch:\t\t" + dirs.dbranch + "\n\tData folder:\t\t" + dirs.data_folder.removesuffix("{}"))
+    sleep(0.4)
+    print("\tControl Branch:\t\t" + dirs.cbranch + "\n\tControl folder:\t\t" + dirs.config_folder.removesuffix("{}") +
+          "\n")
     sleep(0.7)
     print("----------------------------------------------------------------------------\n")
     print("Hi! This is a small tool to update JSON/CSV files in the " + dirs.url_r + " repository!")
@@ -89,6 +94,7 @@ def main():
 
 # noinspection PyUnboundLocalVariable
 def credential_gatherer():
+    global first_run
     print("\n" + icyan + "Gathering credentials from file...")
     if os.path.isfile("gb_tokens.txt") is False:
         sleep(0.5)
@@ -161,32 +167,49 @@ def credential_gatherer():
             br_psw = ans
 
         file = open("gb_tokens.txt", "w")
-        file.write("git_user " + user + "\ngit_token " + git_token + "\npino_token " + br_token + "\npino_email " +
-                   br_email + "\npino_psw " + br_psw)
+        file.write("first_run True\ngit_user " + user + "\ngit_token " + git_token + "\npino_token " + br_token +
+                   "\npino_email " + br_email + "\npino_psw " + br_psw)
         file.close()
         print("\n➔ File created!")
     else:
         file = open("gb_tokens.txt", "r")
         lines = file.readlines()
-        if len(lines) < 5:
+        file.close()
+        if len(lines) < 6:
             s = set()
-            t = ("git_user", "git_token", "pino_token", "pino_email", "pino_psw")
+            t = ("first_run", "git_user", "git_token", "pino_token", "pino_email", "pino_psw")
             for line in lines:
                 s.add(line.split(" ")[0])
             for el in t:
                 if el not in s:
+                    if el == "first_run":
+                        if len(lines) == 5:
+                            tmp_file = open("tmp.txt", "w")
+                            tmp_file.write("first_run True\n" + "".join(lines))
+                            tmp_file.close()
+                            break
+                        continue
                     print()
                     cprint("! '" + el + "' missing in 'gb_tokens.txt' file.", "red")
-            cprint("Please add missing details or delete 'gb_tokens.txt' file to be guided through the process.",
-                   "red")
-            exit(-3)
+            if not (el == "first_run" and len(lines) == 5):
+                cprint("Please add missing details or delete 'gb_tokens.txt' file to be guided through the process.",
+                       "red")
+                exit(-3)
+            if os.path.isfile("tmp.txt"):
+                os.remove("gb_tokens.txt")
+                os.rename("tmp.txt", "gb_tokens.txt")
+                f = open("gb_tokens.txt", "r")
+                lines = f.readlines()
+                f.close()
         for line in lines:
             if len(line.split(" ")) != 2:
                 cprint("CRITICAL ERROR: 'gb_tokens.txt' WRONG FORMATTED (LINE N." + str(lines.index(line) + 1) + ").\n"
                        "Please correct the file in the script directory.", "red")
                 exit(-3)
         for line in lines:
-            if line.startswith("git_user"):
+            if line.startswith("first_run"):
+                first_run = eval(line.split(" ")[1].removesuffix("\n"))
+            elif line.startswith("git_user"):
                 user = line.split(" ")[1]
             elif line.startswith("git_token"):
                 git_token = line.split(" ")[1]
@@ -198,7 +221,10 @@ def credential_gatherer():
                 br_psw = line.split(" ")[1]
             else:
                 cprint("! Unknown line '" + line.removesuffix("\n") + "' in 'gb_tokens.txt' file.", "yellow")
-
+        if first_run:
+            file = open("gb_tokens.txt", "w")
+            file.write("first_run False\n" + "".join(lines[1:]))
+            file.close()
     user = user.removesuffix("\n")
     git_token = git_token.removesuffix("\n")
     br_token = br_token.removesuffix("\n")
@@ -301,6 +327,7 @@ def config_getter(git: Git, config_file: str, tables_infos: dict | None):
 
 def auto_update(tables_infos: dict, toUpdate: dict, git: Git):
     global checking_outcome
+    global first_run
     d = copy.deepcopy(toUpdate)
     while True:
         if checking_outcome:
@@ -332,7 +359,7 @@ def auto_update(tables_infos: dict, toUpdate: dict, git: Git):
             if checking_outcome:
                 print("\nChoose an option:")
                 print("\t(Y) Proceed with processing those files.")
-                print("\t(N) End the script.")
+                print("\t(N/B) End the script.")
                 sleep(0.3)
                 print("\nOther options:")
                 print("\t(U) Refresh 'toUpdate.yml' content.")
@@ -340,11 +367,15 @@ def auto_update(tables_infos: dict, toUpdate: dict, git: Git):
                 print("\t(C) Change output file(s) format.")
                 print("\t(S) Select which file(s) you want to update/create.")
                 print("\t(E) Edit 'toUpdate.yml' file.")
-                print("\t(T) Edit 'tablesInfos.yml' file.\n")
+                print("\t(T) Edit 'tablesInfos.yml' file.")
                 sleep(0.3)
-                uinput = input("(Y/N/U/I/C/S/E/T) " + arrow).lower()
+                if first_run:
+                    cprint("\n\t(W) Change working dirs.\t! Requested feature\n", "green")
+                else:
+                    print("\n\t(W) Change working dirs.\n")
+                uinput = input("(Y/N/B/U/I/C/S/E/T/W) " + arrow).lower()
                 if uinput != "y" and uinput != "n" and uinput != "c" and uinput != "s" and uinput != "e" \
-                        and uinput != "t" and uinput != "u" and uinput != "i":
+                        and uinput != "t" and uinput != "u" and uinput != "i" and uinput != "b" and uinput != "w":
                     print("\nDidn't understand the answer...")
                     continue
                 break
@@ -358,15 +389,16 @@ def auto_update(tables_infos: dict, toUpdate: dict, git: Git):
                 print("\t(I) Refresh 'tablesInfos.yml' content.'")
                 print("\t(E) Edit 'toUpdate.yml' file.")
                 print("\t(T) Edit 'tablesInfos.yml' file.")
-                print("\t(N) End the script.\n")
+                print("\t(N/B) End the script.\n")
                 sleep(0.3)
-                uinput = input("(U/I/E/T/N) " + arrow).lower()
-                if uinput != "i" and uinput != "e" and uinput != "t" and uinput != "u" and uinput != "n":
+                uinput = input("(U/I/E/T/N/B) " + arrow).lower()
+                if uinput != "i" and uinput != "e" and uinput != "t" and uinput != "u" and uinput != "n"\
+                        and uinput != "b":
                     print("\nDidn't understand the answer...")
                     continue
                 break
 
-        if uinput == "n":
+        if uinput == "n" or uinput == "b":
             return
 
         if uinput == "c":
@@ -427,6 +459,220 @@ def auto_update(tables_infos: dict, toUpdate: dict, git: Git):
             print("\n" + icyan + "Refreshing 'tablesInfos.yml' configuration...")
             tables_infos = config_getter(git, "tablesInfos.yml", tables_infos)
             continue
+
+        if uinput == "w":
+            branch_changer(git)
+            print()
+            print(icyan + "Updated 'updatingdata.py' working dirs:")
+            sleep(0.4)
+            print("\tRepository:\t\t" + dirs.repo)
+            sleep(0.4)
+            print("\tData Branch:\t\t" + dirs.dbranch + "\n\tData folder: " + dirs.data_folder + "\n")
+            sleep(0.4)
+            print("\tControl Branch:\t\t" + dirs.cbranch + "\n\tControl folder: " + dirs.config_folder + "\n")
+            sleep(0.7)
+            continue
+
+
+# uinput è assegnata necessariamente qualore step = 1
+# noinspection PyUnboundLocalVariable
+def branch_changer(git: Git):
+    global dirs
+    step = 0
+    while True:
+        if step == 0:
+            print("\nChoose an option:")
+            sleep(0.2)
+            print("\t(R) Change working repo\t\t\t\t\t\t\tcurrently: '" + dirs.repo + "'")
+            sleep(0.2)
+            print("\t(D) Change the branch from which I get the data files I work with\tcurrently: '" + dirs.dbranch +
+                  "'")
+            sleep(0.2)
+            print(
+                "\t(C) Change the branch from which I get the configuration files\t\tcurrently: '" + dirs.cbranch + "'")
+            sleep(0.2)
+            print("\t(DC) Change both data branch and control branch (if they'll be the same)\n")
+            sleep(0.2)
+            print("Other options:")
+            print(
+                "\t(DF) Change the data files folder\t\t\t\t\tcurrently: '" + dirs.data_folder.removesuffix("{}") + "'")
+            sleep(0.2)
+            print("\t(CF) Change the configuration files folder\t\t\t\tcurrently: '" + dirs.config_folder.removesuffix(
+                "{}") +
+                  "'")
+            sleep(0.5)
+            print("\n\t(B) Go back to the menu.\n")
+            sleep(0.3)
+            while True:
+                uinput = input("(R/D/C/DC/DF/CF/B) " + arrow).lower()
+                if uinput != "r" and uinput != "d" and uinput != "c" and uinput != "dc" and uinput != "df" and \
+                   uinput != "cf" and uinput != "b":
+                    print("Didn't get the input...")
+                    continue
+                step = 1
+                break
+        elif step == 1:
+            if uinput == "b":
+                return
+
+            if uinput == "r":
+                while True:
+                    repo = input("\nNew working repository (empty string to go back) " + arrow)
+                    if not repo:
+                        step = 0
+                        break
+                    try:
+                        git.repo = git.g.get_repo("scambifestival/{}".format(repo))
+                    except github.UnknownObjectException:
+                        cprint("\n'" + repo + "' not found in the scambifestival profile. It may not exist or you may"
+                                              " not have the right permissions to access this repository.", "yellow")
+                        sleep(0.5)
+                        continue
+                    try:
+                        git.branch = git.repo.get_branch(dirs.dbranch)
+                    except github.GithubException as e:
+                        if e.status == 404:
+                            print(iyallow + " Data branch '" + dirs.dbranch + "' not found in the new "
+                                  "working repository. Make sure to change it as well.\n")
+                        else:
+                            cprint("\nERROR\t An error occurred while searching for '" + branch + "' in the repo.\n"
+                                   "Error Code:\t" + str(e.status), "red")
+                    else:
+                        dirs.config_raw_url = ("https://raw.githubusercontent.com/scambifestival/{}/".format(repo) +
+                                               dirs.cbranch + "/" + dirs.config_folder + "/{}")
+
+                        cf = dirs.config_folder.removesuffix("/{}")
+                        df = dirs.data_folder.removesuffix("/{}")
+
+                        try:
+                            contents = git.repo.get_contents("", ref=dirs.dbranch)
+                            check = any(content.type == "dir" and content.name == df for content in contents)
+                        except github.GithubException as e:
+                            cprint("ERROR while searching for '" + df + "' folder in the '" + dirs.dbranch + "' branch"
+                                   " inside the new repository.\n\tError code: " + str(e.status) + "\nMake sure to"
+                                   " check if the data folder is in the branch inside the new repo.", "yellow")
+                        else:
+                            if not check:
+                                print(iyallow + " Data folder '" + df + "' not found in the '" + dirs.dbranch +
+                                      "' branch inside the new repo. Make sure to change it as well.")
+
+                        try:
+                            contents = git.repo.get_contents("", ref=dirs.cbranch)
+                            check = any(content.type == "dir" and content.name == cf for content in contents)
+                        except github.GithubException as e:
+                            cprint("ERROR while searching for '" + cf + "' folder in the '" + dirs.cbranch + "' branch"
+                                   " inside the new repository.\n\tError code: " + str(e.status) + "\nMake sure to"
+                                   " check if the config folder is in the branch inside the new repo.", "yellow")
+                        else:
+                            if not check:
+                                print(iyallow + " Control folder '" + cf + "' not found in the '" + dirs.cbranch +
+                                      "' branch in the new repo. Make sure to change it as well.")
+
+                    dirs.url_r = "scambifestival/{}".format(repo)
+                    dirs.repo = repo
+                    print(igreen + "Repository changed sucessfully.")
+                    sleep(0.2)
+                    step = 0
+                    break
+
+            elif uinput == "d" or uinput == "c" or uinput == "dc":
+                while True:
+                    branch = input("\nNew working branch (empty string to go back) " + arrow)
+                    if not branch:
+                        step = 0
+                        break
+                    try:
+                        git.branch = git.repo.get_branch(branch)
+                    except github.GithubException as e:
+                        if e.status == 404:
+                            cprint("\n'" + branch + "' not found in the scambifestival profile.\nIt may not exist"
+                                   " or you may not have the right permissions to access this branch.", "yellow")
+                            sleep(0.5)
+                        else:
+                            cprint("\nERROR\t An error occurred while searching for '" + branch + "' in the repo.\n"
+                                   "Error Code:\t" + str(e.status), "red")
+                        continue
+
+                    cf = dirs.config_folder.removesuffix("/{}")
+                    df = dirs.data_folder.removesuffix("/{}")
+
+                    if uinput == "d" or uinput == "dc":
+                        dirs.dbranch = branch
+                        try:
+                            contents = git.repo.get_contents("", ref=dirs.dbranch)
+                            check = any(content.type == "dir" and content.name == df for content in contents)
+                        except github.GithubException as e:
+                            cprint("ERROR while searching for '" + df + "' folder in the new data branch.\n\t"
+                                   "Error code: " + str(e.status), "red")
+                            continue
+                        if not check:
+                            print(iyallow + " Data folder '" + df + "' not found in the new data branch '"
+                                  + dirs.dbranch + "'. Make sure to change it as well.")
+
+                        print(igreen + "Data branch changed sucessfully.")
+                    if uinput == "c" or uinput == "dc":
+                        dirs.cbranch = branch
+
+                        try:
+                            contents = git.repo.get_contents("", ref=dirs.cbranch)
+                            check = any(content.type == "dir" and content.name == cf for content in contents)
+                        except github.GithubException as e:
+                            cprint("ERROR while searching for '" + cf + "' folder in the new control branch.\n\t"
+                                   "Error code: " + str(e.status), "red")
+                            continue
+                        if not check:
+                            print(iyallow + " Control folder '" + cf + "' not found in the new control branch '"
+                                  + dirs.cbranch + "'. Make sure to change it as well.")
+                        else:
+                            dirs.config_raw_url = ("https://raw.githubusercontent.com/scambifestival/" + dirs.repo +
+                                                   "/" + dirs.cbranch + "/" + dirs.config_folder)
+                        print(igreen + "Control branch changed sucessfully.")
+
+                    step = 0
+                    break
+
+            elif uinput == "df" or uinput == "cf":
+                while True:
+                    folder = input("\nNew folder (empty string to go back) " + arrow)
+                    if not folder:
+                        step = 0
+                        break
+                    if uinput == "df":
+                        try:
+                            contents = git.repo.get_contents("", ref=dirs.dbranch)
+                            check = any(content.type == "dir" and content.name == folder for content in contents)
+                        except github.GithubException as e:
+                            cprint("ERROR while searching for '" + folder + "' folder in the data branch.\n\t"
+                                   "Error code: " + str(e.status), "red")
+                            continue
+                        if not check:
+                            print(iyallow + " New data folder '" + folder + "' not found in the data branch '" +
+                                  dirs.dbranch + "'. It may not exist or you may not have the right permissions to "
+                                  "access this folder.")
+                            continue
+                        dirs.data_folder = folder + "/{}"
+                        print(igreen + " Data folder changed successfully.")
+                        step = 0
+                        break
+                    elif uinput == "cf":
+                        try:
+                            contents = git.repo.get_contents("", ref=dirs.dbranch)
+                            check = any(content.type == "dir" and content.name == folder for content in contents)
+                        except github.GithubException as e:
+                            cprint("ERROR while searching for '" + folder + "' folder in the control branch.\n\t"
+                                   "Error code: " + str(e.status), "red")
+                            continue
+                        if not check:
+                            print(iyallow + " New control folder '" + folder + "' not found in the control branch '" +
+                                  dirs.cbranch + "'. It may not exist or you may not have the right permissions to "
+                                  "access this folder.")
+                            continue
+                        dirs.config_folder = folder + "/{}"
+                        dirs.config_raw_url = ("https://raw.githubusercontent.com/scambifestival/" + dirs.repo + "/"
+                                               + dirs.cbranch + "/" + dirs.config_folder)
+                        print(igreen + " Config folder changed successfully.")
+                        step = 0
+                        break
 
 
 def formats_changer(d: dict, formats: dict):
@@ -1343,6 +1589,31 @@ def relations(tables_infos: dict, file_to_update: str, new_file_name: str, git: 
     if new_file_name.endswith("csv"):
         s = csv_formatter(li)
     else:
+        c = 0
+        for sub_dict in li:
+            d = copy.deepcopy(sub_dict)
+            for el in sub_dict:
+                if type(sub_dict[el]) is str and sub_dict[el].replace(" ", "") == "":
+                    # logging.warning(el + " removed from dict number " + str(li.index(sub_dict)))
+                    del d[el]
+                if type(sub_dict[el]) is list or type(sub_dict[el]) is dict:
+                    if len(sub_dict[el]) == 0:
+                        # logging.warning(el + " removed from dict number " + str(li.index(sub_dict)))
+                        del d[el]
+                        continue
+                    if type(sub_dict[el]) is dict:
+                        for i in sub_dict[el]:
+                            if len(i) == 0:
+                                # logging.warning(i + " removed from dict number " + str(li.index(sub_dict)))
+                                del d[el][i]
+                    elif type(sub_dict[el]) is list:
+                        for i in sub_dict[el]:
+                            if i is None or (i is not None and len(i) == 0):
+                                # logging.warning(i + " removed from dict number " + str(li.index(sub_dict))) \
+                                    # if (i is not None) else logging.warning("NoneType object has been removed")
+                                del d[el][d[el].index(i)]
+            li[c] = d
+            c += 1
         s = json.dumps(li, indent=4, ensure_ascii=False)
     print("\t" + icyan + "New content created.\n")
     if store:
